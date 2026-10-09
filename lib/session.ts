@@ -1,18 +1,36 @@
 import 'server-only'
-import { cookies } from 'next/headers'
+import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { type Role, ROLE_HOME } from '@/lib/roles'
-import { MOCK_COOKIE, parseMockSession } from '@/lib/mock-session'
+import { eq } from 'drizzle-orm'
+import { auth } from '@/lib/auth'
+import { db } from '@/lib/db'
+import { user } from '@/lib/db/schema'
+import { type Role, ROLE_HOME, isRole } from '@/lib/roles'
 
 export type SessionUser = { id: string; name: string; email: string; role: Role }
 
-/** Reads the mock session cookie set by the auth form. No database needed. */
 export async function getSessionUser(): Promise<SessionUser | null> {
-  const store = await cookies()
-  const raw = store.get(MOCK_COOKIE)?.value
-  const data = parseMockSession(raw)
-  if (!data) return null
-  return { id: data.id, name: data.name, email: data.email, role: data.role }
+  try {
+    const session = await auth.api.getSession({ headers: await headers() })
+    if (!session?.user) return null
+
+    // Always read role from DB so an admin role change takes effect immediately
+    const [row] = await db
+      .select({ role: user.role })
+      .from(user)
+      .where(eq(user.id, session.user.id))
+
+    const role = row && isRole(row.role) ? row.role : 'customer'
+    return {
+      id: session.user.id,
+      name: session.user.name,
+      email: session.user.email,
+      role,
+    }
+  } catch {
+    // DB not reachable or no session — fail gracefully
+    return null
+  }
 }
 
 export async function requireRole(role: Role): Promise<SessionUser> {

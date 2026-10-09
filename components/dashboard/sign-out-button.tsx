@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 import { Loader2, LogOut } from 'lucide-react'
+import { authClient } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
-import { MOCK_COOKIE } from '@/lib/mock-session'
 
 export function SignOutButton() {
   const [loading, setLoading] = useState(false)
@@ -13,10 +13,9 @@ export function SignOutButton() {
       variant="outline"
       size="sm"
       disabled={loading}
-      onClick={() => {
+      onClick={async () => {
         setLoading(true)
-        // Clear the mock session cookie
-        document.cookie = `${MOCK_COOKIE}=; path=/; max-age=0; SameSite=Lax`
+        await authClient.signOut()
         window.location.href = '/'
       }}
     >

@@ -1,15 +1,7 @@
 'use client'
 
-// --- MOCK: no real auth, simulates success and redirects to /dashboard ---
-export const authClient = {
-  signUp: {
-    email: async (_: { name: string; email: string; password: string }) => {
-      return { error: null }
-    },
-  },
-  signIn: {
-    email: async (_: { email: string; password: string }) => {
-      return { error: null }
-    },
-  },
-}
+import { createAuthClient } from 'better-auth/react'
+
+export const authClient = createAuthClient({
+  baseURL: process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000',
+})

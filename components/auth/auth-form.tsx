@@ -4,12 +4,12 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
+import { authClient } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { ROLE_LABEL, ROLE_HOME, type Role } from '@/lib/roles'
-import { MOCK_COOKIE, serialiseMockSession, type MockSessionData } from '@/lib/mock-session'
 
 type Mode = 'login' | 'signup'
 type Errors = Partial<Record<'name' | 'email' | 'password' | 'form', string>>
@@ -17,7 +17,7 @@ type Errors = Partial<Record<'name' | 'email' | 'password' | 'form', string>>
 const DEMO: Record<Role, { email: string; password: string; name: string }> = {
   customer: { email: 'customer@zerowaste.demo', password: 'Customer123!', name: 'Demo Customer' },
   merchant: { email: 'merchant@zerowaste.demo', password: 'Merchant123!', name: 'Demo Merchant' },
-  admin:    { email: 'admin@zerowaste.demo',    password: 'Admin123!',    name: 'Demo Admin' },
+  admin:    { email: 'admin@zerowaste.demo',    password: 'Admin123!',    name: 'Demo Admin'     },
 }
 
 function validate(mode: Mode, values: { name: string; email: string; password: string }): Errors {
@@ -29,12 +29,6 @@ function validate(mode: Mode, values: { name: string; email: string; password: s
   if (values.password.length < 8)
     errors.password = 'Password must be at least 8 characters.'
   return errors
-}
-
-function setMockSessionCookie(data: MockSessionData) {
-  const value = serialiseMockSession(data)
-  // Session cookie — expires when browser closes; change max-age for persistence
-  document.cookie = `${MOCK_COOKIE}=${value}; path=/; max-age=86400; SameSite=Lax`
 }
 
 export function AuthForm({ mode, role }: { mode: Mode; role?: Role }) {
@@ -57,21 +51,31 @@ export function AuthForm({ mode, role }: { mode: Mode; role?: Role }) {
 
     setLoading(true)
 
-    // Simulate a short network delay for realism
-    await new Promise((r) => setTimeout(r, 600))
+    const result =
+      mode === 'signup'
+        ? await authClient.signUp.email({
+            name: values.name.trim(),
+            email: values.email.trim(),
+            password: values.password,
+          })
+        : await authClient.signIn.email({
+            email: values.email.trim(),
+            password: values.password,
+          })
 
-    // Build the mock session
-    const session: MockSessionData = {
-      id: `mock_${Date.now()}`,
-      name: mode === 'signup' ? values.name.trim() : (DEMO[selected]?.name ?? values.email),
-      email: values.email.trim(),
-      role: selected,
-    }
-
-    setMockSessionCookie(session)
     setLoading(false)
 
-    // Hard-navigate so the server component re-reads the cookie
+    if (result.error) {
+      setErrors({
+        form:
+          mode === 'signup'
+            ? 'Could not create account. This email may already be in use.'
+            : 'Email or password is incorrect. Please try again.',
+      })
+      return
+    }
+
+    // Hard navigate so server components re-read the session cookie
     window.location.href = ROLE_HOME[selected]
   }
 
@@ -82,7 +86,7 @@ export function AuthForm({ mode, role }: { mode: Mode; role?: Role }) {
 
   return (
     <form onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
-      {/* Role selector — shown on both login and signup */}
+      {/* Role selector */}
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-2 text-sm font-medium">I am a</legend>
         <div role="radiogroup" className="grid grid-cols-3 gap-1 rounded-xl bg-muted p-1">
@@ -114,7 +118,6 @@ export function AuthForm({ mode, role }: { mode: Mode; role?: Role }) {
             value={values.name}
             onChange={update('name')}
             aria-invalid={!!errors.name}
-            aria-describedby={errors.name ? 'name-error' : undefined}
           />
         </Field>
       )}
@@ -127,7 +130,6 @@ export function AuthForm({ mode, role }: { mode: Mode; role?: Role }) {
           value={values.email}
           onChange={update('email')}
           aria-invalid={!!errors.email}
-          aria-describedby={errors.email ? 'email-error' : undefined}
         />
       </Field>
 
@@ -139,7 +141,6 @@ export function AuthForm({ mode, role }: { mode: Mode; role?: Role }) {
           value={values.password}
           onChange={update('password')}
           aria-invalid={!!errors.password}
-          aria-describedby={errors.password ? 'password-error' : undefined}
         />
       </Field>
 
@@ -158,7 +159,7 @@ export function AuthForm({ mode, role }: { mode: Mode; role?: Role }) {
       <div className="rounded-xl border border-dashed bg-muted/50 p-4 text-sm">
         <p className="font-medium">Trying the demo?</p>
         <p className="mt-1 text-muted-foreground">
-          Use the sample {ROLE_LABEL[selected].toLowerCase()} account:{' '}
+          Sample {ROLE_LABEL[selected].toLowerCase()} account:{' '}
           <span className="font-mono">{DEMO[selected].email}</span>
         </p>
         <button type="button" onClick={useDemo} className="mt-2 font-medium text-primary hover:underline">
@@ -186,25 +187,15 @@ export function AuthForm({ mode, role }: { mode: Mode; role?: Role }) {
 }
 
 function Field({
-  id,
-  label,
-  error,
-  children,
+  id, label, error, children,
 }: {
-  id: string
-  label: string
-  error?: string
-  children: React.ReactNode
+  id: string; label: string; error?: string; children: React.ReactNode
 }) {
   return (
     <div className="flex flex-col gap-2">
       <Label htmlFor={id}>{label}</Label>
       {children}
-      {error && (
-        <p id={`${id}-error`} className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
+      {error && <p id={`${id}-error`} className="text-sm text-destructive">{error}</p>}
     </div>
   )
 }
